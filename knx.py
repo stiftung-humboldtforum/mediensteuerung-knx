@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 from mqtt_client import Client
@@ -62,13 +63,11 @@ class KNX:
             logger.exception(
                 'Failed to add switch for location id "%s", group address "%s"',
                 name, address)
-            # Undo any partial device registration so it can't become a ghost
-            # device that later crashes device_updated_cb.
-            try:
-                self.xknx.devices.remove(str(name))
-            except Exception:
-                pass
             return
+        # xknx 3: devices no longer auto-add to xknx.devices — register
+        # explicitly. (A failed Switch() above was never added, so there is no
+        # partial/ghost device to undo.)
+        self.xknx.devices.async_add(switch)
         self.switches[name] = switch
         logger.info(
             'Added switch for location with id "%s", group address "%s", inverted "%s"',
@@ -80,16 +79,19 @@ class KNX:
     async def stop(self):
         await self.xknx.stop()
 
-    async def device_updated_cb(self, device: Device):
-        # A failed add_switch can leave a ghost device registered in xknx but
-        # absent from self.switches; ignore updates for it instead of KeyError.
+    def device_updated_cb(self, device: Device):
+        # xknx 3 calls device-updated callbacks SYNCHRONOUSLY (callable, not
+        # awaitable), so schedule the async MQTT publish on the running loop.
+        # The .get guard also ignores any device not in self.switches.
         switch = self.switches.get(int(device.name))
         if switch is None:
             return
-        logger.info('knx/switch/%s %s',
-                    device.name,
-                    switch.state)
         state = switch.state
         group_address = str(switch.switch.group_address)
-        if state != None:
-            await self.mqtt_client.publish_json(f'knx/switch/{device.name}', {'state': state, 'time': int(time.time() * 1000), 'group_address': group_address}, qos=1)
+        logger.info('knx/switch/%s %s', device.name, state)
+        if state is not None:
+            asyncio.create_task(self.mqtt_client.publish_json(
+                f'knx/switch/{device.name}',
+                {'state': state, 'time': int(time.time() * 1000),
+                 'group_address': group_address},
+                qos=1))
