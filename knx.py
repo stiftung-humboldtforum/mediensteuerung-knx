@@ -36,6 +36,13 @@ class KNX:
                          daemon_mode=False)
         self.switches: dict[int, Switch] = {}
         self.locations = locations
+        # Serial publish pipeline: xknx 3 calls device_updated_cb synchronously,
+        # so we can't await there. Queue publishes and drain them in one consumer
+        # task — keeps a strong ref (no GC of fire-and-forget tasks), surfaces
+        # publish errors, and preserves the in-order publishing the old awaited
+        # callback had.
+        self._publish_queue: asyncio.Queue = asyncio.Queue()
+        self._publish_task: asyncio.Task | None = None
 
         for location in locations:
             if 'knx_switch_group_addresses' in location['custom_fields']:
@@ -73,16 +80,30 @@ class KNX:
             'Added switch for location with id "%s", group address "%s", inverted "%s"',
             name, address, invert)
 
+    async def _publish_consumer(self):
+        while True:
+            topic, payload = await self._publish_queue.get()
+            try:
+                await self.mqtt_client.publish_json(topic, payload, qos=1)
+            except Exception as e:
+                logger.exception('knx publish to %s failed: %s', topic, e)
+
     async def start(self):
+        if self._publish_task is None or self._publish_task.done():
+            self._publish_task = asyncio.create_task(self._publish_consumer())
         await self.xknx.start()
 
     async def stop(self):
         await self.xknx.stop()
+        if self._publish_task is not None:
+            self._publish_task.cancel()
+            self._publish_task = None
 
     def device_updated_cb(self, device: Device):
         # xknx 3 calls device-updated callbacks SYNCHRONOUSLY (callable, not
-        # awaitable), so schedule the async MQTT publish on the running loop.
-        # The .get guard also ignores any device not in self.switches.
+        # awaitable). Enqueue the publish (sync, non-blocking) and let the
+        # consumer task publish it in order. The .get guard ignores any device
+        # not in self.switches.
         switch = self.switches.get(int(device.name))
         if switch is None:
             return
@@ -90,8 +111,7 @@ class KNX:
         group_address = str(switch.switch.group_address)
         logger.info('knx/switch/%s %s', device.name, state)
         if state is not None:
-            asyncio.create_task(self.mqtt_client.publish_json(
+            self._publish_queue.put_nowait((
                 f'knx/switch/{device.name}',
                 {'state': state, 'time': int(time.time() * 1000),
-                 'group_address': group_address},
-                qos=1))
+                 'group_address': group_address}))
