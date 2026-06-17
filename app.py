@@ -1,7 +1,9 @@
+import asyncio
 import os
 import ssl
 
 import asyncclick as click
+from aiomqtt import MqttError
 
 from api import Api
 from knx import KNX
@@ -14,8 +16,11 @@ class App:
         self.api = Api()
         self.client = client
 
-    def setup(self):
-        self.locations = self.api.get('/api/').json()['locations']
+    async def setup(self):
+        # api.get is blocking (requests); fetch off the event loop, then build
+        # KNX on the loop (XKNX construction may bind to the running loop).
+        response = await asyncio.to_thread(self.api.get, '/api/')
+        self.locations = response.json()['locations']
         self.knx = KNX(self.client, self.locations)
 
     async def start(self):
@@ -23,18 +28,11 @@ class App:
 
     async def reload(self):
         await self.knx.stop()
-        self.setup()
+        await self.setup()
         await self.start()
 
 
-@click.command()
-@click.option('--ca_certificate', default='/opt/tls/ca_certificate.pem')
-@click.option('--client_certificate', default='/opt/tls/client_certificate.pem')
-@click.option('--client_key', default='/opt/tls/client_key.pem')
-async def main(ca_certificate, client_certificate, client_key):
-    ssl_context = ssl.create_default_context(cafile=ca_certificate)
-    ssl_context.load_cert_chain(
-        client_certificate, client_key)
+async def run(ssl_context):
     async with Client(
             os.environ['MQTT_HOSTNAME'],
             identifier='knx',
@@ -45,12 +43,29 @@ async def main(ca_certificate, client_certificate, client_key):
     ) as client:
         await client.subscribe('api/data-refresh')
         app = App(client)
-        app.setup()
+        await app.setup()
         await app.start()
         async for message in client.messages:
             if message.topic.matches('api/data-refresh'):
                 logger.info('Reload signal received.')
                 await app.reload()
+
+
+@click.command()
+@click.option('--ca_certificate', default='/opt/tls/ca_certificate.pem')
+@click.option('--client_certificate', default='/opt/tls/client_certificate.pem')
+@click.option('--client_key', default='/opt/tls/client_key.pem')
+async def main(ca_certificate, client_certificate, client_key):
+    ssl_context = ssl.create_default_context(cafile=ca_certificate)
+    ssl_context.load_cert_chain(
+        client_certificate, client_key)
+    # Reconnect with backoff instead of exiting on broker disconnect.
+    while True:
+        try:
+            await run(ssl_context)
+        except MqttError as e:
+            logger.error('MQTT connection lost (%s); reconnecting in 5s', e)
+            await asyncio.sleep(5)
 
 
 if __name__ == '__main__':

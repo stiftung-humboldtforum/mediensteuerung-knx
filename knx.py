@@ -39,31 +39,40 @@ class KNX:
         for location in locations:
             if 'knx_switch_group_addresses' in location['custom_fields']:
                 knx_switch_group_addresses = location['custom_fields']['knx_switch_group_addresses']
-                invert_knx_switch_group_addresses = location[
-                    'custom_fields']['invert_knx_switch_group_addresses']
+                # invert is a parallel newline-separated field; split it the same
+                # way (it was read raw and indexed per character -> always False).
+                invert_lines = (location['custom_fields'].get(
+                    'invert_knx_switch_group_addresses') or '').splitlines()
                 if knx_switch_group_addresses:
                     knx_switch_group_addresses = knx_switch_group_addresses.splitlines()
                     for i, address in enumerate(knx_switch_group_addresses):
                         try:
-                            invert = invert_knx_switch_group_addresses[i] == 'true'
-                        except:
+                            invert = invert_lines[i].strip().lower() == 'true'
+                        except IndexError:
                             invert = False
                         self.add_switch(location['id'], address, invert)
 
     def add_switch(self, name, address, invert=False):
         try:
-            self.switches[name] = Switch(self.xknx,
-                                         name=name,
-                                         group_address=address,
-                                         invert=invert)
-            logger.info(
-                'Added switch for location with id "%s", group address "%s", inverted "%s"',
-                name,
-                address,
-                invert
-            )
-        except:
-            logger.exception('')
+            switch = Switch(self.xknx,
+                            name=name,
+                            group_address=address,
+                            invert=invert)
+        except Exception:
+            logger.exception(
+                'Failed to add switch for location id "%s", group address "%s"',
+                name, address)
+            # Undo any partial device registration so it can't become a ghost
+            # device that later crashes device_updated_cb.
+            try:
+                self.xknx.devices.remove(str(name))
+            except Exception:
+                pass
+            return
+        self.switches[name] = switch
+        logger.info(
+            'Added switch for location with id "%s", group address "%s", inverted "%s"',
+            name, address, invert)
 
     async def start(self):
         await self.xknx.start()
@@ -72,11 +81,15 @@ class KNX:
         await self.xknx.stop()
 
     async def device_updated_cb(self, device: Device):
-        switch = self.switches[int(device.name)]
+        # A failed add_switch can leave a ghost device registered in xknx but
+        # absent from self.switches; ignore updates for it instead of KeyError.
+        switch = self.switches.get(int(device.name))
+        if switch is None:
+            return
         logger.info('knx/switch/%s %s',
                     device.name,
                     switch.state)
         state = switch.state
-        group_address = switch.switch.group_addr_str().split(',')[0][1:]
+        group_address = str(switch.switch.group_address)
         if state != None:
             await self.mqtt_client.publish_json(f'knx/switch/{device.name}', {'state': state, 'time': int(time.time() * 1000), 'group_address': group_address}, qos=1)
