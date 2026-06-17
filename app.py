@@ -37,21 +37,20 @@ async def main(ca_certificate, client_certificate, client_key):
         client_certificate, client_key)
     async with Client(
             os.environ['MQTT_HOSTNAME'],
-            client_id='knx',
+            identifier='knx',
             port=8883,
             keepalive=60,
             tls_context=ssl_context,
-            max_concurrent_outgoing_calls=2000
+            max_concurrent_outgoing_calls=2000,
     ) as client:
         await client.subscribe('api/data-refresh')
         app = App(client)
         app.setup()
         await app.start()
-        async with client.messages() as messages:
-            async for message in messages:
-                if message.topic.matches('api/data-refresh'):
-                    logger.info('Reload signal received.')
-                    await app.reload()
+        async for message in client.messages:
+            if message.topic.matches('api/data-refresh'):
+                logger.info('Reload signal received.')
+                await app.reload()
 
 
 if __name__ == '__main__':
