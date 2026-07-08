@@ -34,7 +34,13 @@ class KNX:
         self.xknx = XKNX(device_updated_cb=self.device_updated_cb,
                          connection_config=connection_config,
                          daemon_mode=False)
-        self.switches: dict[int, Switch] = {}
+        # Registered switches, one entry PER group address. NOT keyed by
+        # location id: a location can carry several group addresses (see the
+        # add_switch loop below), so a dict keyed by id would collapse them and
+        # the update callback would always report the last-registered switch.
+        # xknx Device defines __eq__ but no __hash__ -> unhashable, so no set;
+        # identity membership over a list is enough.
+        self.switches: list[Switch] = []
         self.locations = locations
         # Serial publish pipeline: xknx 3 calls device_updated_cb synchronously,
         # so we can't await there. Queue publishes and drain them in one consumer
@@ -75,7 +81,7 @@ class KNX:
         # explicitly. (A failed Switch() above was never added, so there is no
         # partial/ghost device to undo.)
         self.xknx.devices.async_add(switch)
-        self.switches[name] = switch
+        self.switches.append(switch)
         logger.info(
             'Added switch for location with id "%s", group address "%s", inverted "%s"',
             name, address, invert)
@@ -102,9 +108,15 @@ class KNX:
     def device_updated_cb(self, device: Device):
         # xknx 3 calls device-updated callbacks SYNCHRONOUSLY (callable, not
         # awaitable). Enqueue the publish (sync, non-blocking) and let the
-        # consumer task publish it in order. The .get guard ignores any device
-        # not in self.switches.
-        switch = self.switches.get(int(device.name))
+        # consumer task publish it in order.
+        #
+        # Read state/group_address from the UPDATED device itself, not from a
+        # per-location lookup: a location may register several switches (one per
+        # group address) and looking up by device.name (location id) would always
+        # return the last-registered one -> an update on switch A would publish
+        # switch B's state/address. The identity check ignores any device not
+        # registered by this instance.
+        switch = next((s for s in self.switches if s is device), None)
         if switch is None:
             return
         state = switch.state
