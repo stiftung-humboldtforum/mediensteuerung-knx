@@ -2,9 +2,9 @@ aiomqtt==2.5.1 \
     --hash=sha256:25a0a47d157e8f158d2da1110ea4786c0615518751e94f7b04976c977a8ff20d \
     --hash=sha256:fd58c3593160e4d475d90ce911cdfc4239cd64de96b0ba22edf6c86bd7afa278
     # via -r requirements.in
-asyncclick==8.3.0.7 \
-    --hash=sha256:7607046de39a3f315867cad818849f973e29d350c10d92f251db3ff7600c6c7d \
-    --hash=sha256:8a80d8ac613098ee6a9a8f0248f60c66c273e22402cf3f115ed7f071acfc71d3
+asyncclick==8.4.2.1 \
+    --hash=sha256:8f259376ae8d4fcd91961c8ad3e85e9b63c9cf181a122201c7dfed3d7f6024b8 \
+    --hash=sha256:dbd533769c4e3ce831c05394027ea1cd606c09688e18abab13dbcfbf7dc5a142
     # via -r requirements.in
 certifi==2026.6.17 \
     --hash=sha256:024c88eeec92ca068db80f02b8b07c9cef7b9fe261d1d535abfd5abd6f6af432 \
@@ -281,7 +281,7 @@ urllib3==2.7.0 \
     --hash=sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c \
     --hash=sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897
     # via requests
-xknx==3.16.0 \
-    --hash=sha256:11ef6be0130d83b155637d9120c39b33c69ba4d4c6d0408fdfbf105278b2edfa \
-    --hash=sha256:3928a095e923f021f2a86b024c8ff0f7c96cbc3db46a56c89af0c4d5d2bbc334
+xknx==3.20.0 \
+    --hash=sha256:064353a2d295d793a4198994d732fb4e5bba922d5e5a47d0f7e14ac3ac16dacc \
+    --hash=sha256:8be97bcca6c7768f02d3bc18f6236c786e8707327fde55c015272753880cc0df
     # via -r requirements.in
