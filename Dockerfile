@@ -1,10 +1,8 @@
-FROM python:3.11-slim
-
+FROM python:3.12-slim
 RUN pip install --no-cache-dir --upgrade pip
 
-RUN pip install --no-cache-dir --upgrade \
-	asyncclick==8.1.3.4 \
-	anyio==3.6.2 \
-	requests==2.30.0 \
-	aiomqtt==1.1.0 \
-	xknx==2.11.2
+# Fully-pinned + hashed deps (generated from requirements.in via `uv pip compile
+# --universal --generate-hashes`); --require-hashes makes the build fail on any
+# drift or tampering.
+COPY requirements.txt .
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt

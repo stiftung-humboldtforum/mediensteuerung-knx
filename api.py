@@ -17,19 +17,22 @@ class Api:
             'POST',
             f'{self.api_url}/auth/jwt/login',
             files=auth_data,
-            verify=os.environ['API_ROOT_CA'])
+            verify=os.environ['API_ROOT_CA'],
+            timeout=10)
+        response.raise_for_status()
         self.token = response.json()['access_token']
 
-    def get(self, path):
+    def get(self, path, _retried=False):
         headers = {
             'authorization': f'Bearer {self.token}'
         }
         response = requests.get(
             f'{self.api_url}{path}',
             headers=headers,
-            verify=os.environ['API_ROOT_CA'])
-        if response.status_code == 401:
+            verify=os.environ['API_ROOT_CA'],
+            timeout=10)
+        if response.status_code == 401 and not _retried:
+            # one-shot re-login retry; avoid unbounded recursion on persistent 401
             self.login()
-            return self.get(path)
-        else:
-            return response
+            return self.get(path, _retried=True)
+        return response
