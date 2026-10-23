@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12.15-slim
 RUN pip install --no-cache-dir --upgrade pip
 
 # Fully-pinned + hashed deps (generated from requirements.in via `uv pip compile
