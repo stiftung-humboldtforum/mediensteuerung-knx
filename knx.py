@@ -7,17 +7,25 @@ from xknx.devices import Device, Switch
 
 from misc import logger
 
+logger.info(f"KNX Gateway IP: {os.environ['KNX_GATEWAY_IP']}")
+logger.info(f"KNXKEYS file exists: {os.path.exists(os.environ['KNXKEYS_FILE_PATH'])}")
+logger.info(f"KNXKEYS file path: {os.environ['KNXKEYS_FILE_PATH']}")
+
+# Logging für die SecureConfig
 secure_config = SecureConfig(
     knxkeys_file_path=os.environ['KNXKEYS_FILE_PATH'],
     knxkeys_password=os.environ['KNXKEYS_PASSWORD']
 )
+logger.info("SecureConfig created successfully")
 
+# Logging für die ConnectionConfig
 connection_config = ConnectionConfig(
-    connection_type=ConnectionType.AUTOMATIC,
+    connection_type=ConnectionType.TUNNELING,
     gateway_ip=os.environ['KNX_GATEWAY_IP'],
-    secure_config=secure_config
+    secure_config=secure_config,
+    local_ip=None
 )
-
+logger.info(f"ConnectionConfig created with type: {connection_config.connection_type}")
 
 class KNX:
     def __init__(self, mqtt_client: Client, locations: list[dict]):
